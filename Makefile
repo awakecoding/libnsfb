@@ -39,6 +39,9 @@ else
   NSFB_LINUX_AVAILABLE := no
 endif
 
+# FreeRDS backend always available
+NSFB_FREERDS_AVAILABLE := yes
+
 # Flags and setup for each support library
 ifeq ($(NSFB_SDL_AVAILABLE),yes)
   $(eval $(call pkg_config_package_add_flags,sdl,CFLAGS))
