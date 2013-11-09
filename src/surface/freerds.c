@@ -23,7 +23,59 @@
 #include "plot.h"
 #include "cursor.h"
 
-#define UNUSED(x) ((x) = (x))
+#include <winpr/crt.h>
+
+#include <freerds/freerds.h>
+#include <freerds/service_helper.h>
+
+static DWORD SessionId = 10;
+static const char* endpoint = "NS";
+
+static rdsService* service = NULL;
+static rdsModuleConnector* connector = NULL;
+
+/**
+ * FreeRDS Interface
+ */
+
+static int freerds_client_synchronize_keyboard_event(rdsModuleConnector* connector, DWORD flags)
+{
+	return 0;
+}
+
+static int freerds_client_scancode_keyboard_event(rdsModuleConnector* connector, DWORD flags, DWORD code, DWORD keyboardType)
+{
+	return 0;
+}
+
+static int freerds_client_virtual_keyboard_event(rdsModuleConnector* connector, DWORD flags, DWORD code)
+{
+	return 0;
+}
+
+static int freerds_client_unicode_keyboard_event(rdsModuleConnector* connector, DWORD flags, DWORD code)
+{
+	return 0;
+}
+
+static int freerds_client_mouse_event(rdsModuleConnector* connector, DWORD flags, DWORD x, DWORD y)
+{
+	return 0;
+}
+
+static int freerds_client_extended_mouse_event(rdsModuleConnector* connector, DWORD flags, DWORD x, DWORD y)
+{
+	return 0;
+}
+
+static int freerds_service_accept(rdsService* service)
+{
+	return 0;
+}
+
+/**
+ * NSFB Interface
+ */
 
 static int freerds_defaults(nsfb_t* nsfb)
 {
@@ -49,6 +101,21 @@ static int freerds_initialise(nsfb_t* nsfb)
 	nsfb->ptr = realloc(nsfb->ptr, size);
 	nsfb->linelen = (nsfb->width * nsfb->bpp) / 8;
 
+	service = freerds_service_new(SessionId, endpoint);
+	connector = (rdsModuleConnector*) service;
+
+	service->custom = (void*) nsfb;
+	service->Accept = freerds_service_accept;
+
+	connector->client->SynchronizeKeyboardEvent = freerds_client_synchronize_keyboard_event;
+	connector->client->ScancodeKeyboardEvent = freerds_client_scancode_keyboard_event;
+	connector->client->VirtualKeyboardEvent = freerds_client_virtual_keyboard_event;
+	connector->client->UnicodeKeyboardEvent = freerds_client_unicode_keyboard_event;
+	connector->client->MouseEvent = freerds_client_mouse_event;
+	connector->client->ExtendedMouseEvent = freerds_client_extended_mouse_event;
+
+	freerds_service_start(service);
+
 	return 0;
 }
 
@@ -64,10 +131,6 @@ static int freerds_finalise(nsfb_t* nsfb)
 static bool freerds_input(nsfb_t* nsfb, nsfb_event_t* event, int timeout)
 {
 	//fprintf(stderr, "libnsfb_freerds_input\n");
-
-	UNUSED(nsfb);
-	UNUSED(event);
-	UNUSED(timeout);
 
 	return false;
 }

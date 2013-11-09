@@ -24,12 +24,14 @@ CFLAGS := -g -std=c99 -D_BSD_SOURCE -D_POSIX_C_SOURCE=200112L \
 	-I$(CURDIR)/include/ -I$(CURDIR)/src $(WARNFLAGS) $(CFLAGS) -Wno-error
 
 NSFB_XCB_PKG_NAMES := xcb xcb-icccm xcb-image xcb-keysyms xcb-atom
+NSFB_FREERDS_PKG_NAMES := winpr freerds-module-connector
 
 # determine which surface handlers can be compiled based upon avalable library
 $(eval $(call pkg_config_package_available,NSFB_VNC_AVAILABLE,libvncserver))
 $(eval $(call pkg_config_package_available,NSFB_SDL_AVAILABLE,sdl))
 $(eval $(call pkg_config_package_available,NSFB_XCB_AVAILABLE,$(NSFB_XCB_PKG_NAMES)))
 $(eval $(call pkg_config_package_available,NSFB_WLD_AVAILABLE,wayland-client))
+$(eval $(call pkg_config_package_available,NSFB_FREERDS_AVAILABLE,$(NSFB_FREERDS_PKG_NAMES)))
 
 # surfaces not detectable via pkg-config 
 NSFB_ABLE_AVAILABLE := no
@@ -39,8 +41,13 @@ else
   NSFB_LINUX_AVAILABLE := no
 endif
 
-# FreeRDS backend always available
-NSFB_FREERDS_AVAILABLE := yes
+# FreeRDS backend
+ifeq ($(NSFB_FREERDS_AVAILABLE),yes)
+  CFLAGS := $(CFLAGS) -Wno-undef -Wno-unused-parameter
+  REQUIRED_PKGS := $(REQUIRED_PKGS) $(NSFB_FREERDS_PKG_NAMES)
+  $(eval $(call pkg_config_package_add_flags,winpr,CFLAGS))
+  $(eval $(call pkg_config_package_add_flags,freerds-module-connector,CFLAGS))
+endif
 
 # Flags and setup for each support library
 ifeq ($(NSFB_SDL_AVAILABLE),yes)
