@@ -43,7 +43,7 @@ endif
 
 # FreeRDS backend
 ifeq ($(NSFB_FREERDS_AVAILABLE),yes)
-  CFLAGS := $(CFLAGS) -Wno-undef -Wno-unused-parameter
+  CFLAGS := $(CFLAGS) -Wno-undef -Wno-unused-parameter -Wno-sign-compare -Wno-strict-prototypes -Wno-missing-prototypes
   REQUIRED_PKGS := $(REQUIRED_PKGS) $(NSFB_FREERDS_PKG_NAMES)
   $(eval $(call pkg_config_package_add_flags,winpr,CFLAGS))
   $(eval $(call pkg_config_package_add_flags,freerds-module-connector,CFLAGS))

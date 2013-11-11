@@ -27,6 +27,8 @@
 #include "cursor.h"
 
 #include <winpr/crt.h>
+#include <winpr/input.h>
+#include <winpr/collections.h>
 
 #include <freerds/freerds.h>
 #include <freerds/service_helper.h>
@@ -35,13 +37,406 @@ static int connected = 0;
 static DWORD SessionId = 1;
 static const char* endpoint = "NetSurf";
 
+static wQueue* InputQueue = NULL;
+
 static int framebufferSize = 0;
 static RDS_FRAMEBUFFER framebuffer = { 0 };
 
 static rdsService* service = NULL;
 static rdsModuleConnector* connector = NULL;
 
-int freerds_check_shared_framebuffer(void)
+static DWORD KEYCODE_TO_VKCODE_NSFB[128] =
+{
+	0, /* 0, NSFB_KEY_UNKNOWN */
+	0, /* 1 */
+	0, /* 2 */
+	0, /* 3 */
+	0, /* 4 */
+	0, /* 5 */
+	0, /* 6 */
+	0, /* 7 */
+	VK_BACK, /* 8, NSFB_KEY_BACKSPACE */
+	VK_TAB, /* 9, NSFB_KEY_TAB */
+	0, /* 10, NSFB_KEY_LF */
+	0, /* 11 */
+	VK_CLEAR, /* 12, NSFB_KEY_CLEAR */
+	VK_RETURN, /* 13, NSFB_KEY_RETURN */
+	0, /* 14 */
+	0, /* 15 */
+	0, /* 16 */
+	0, /* 17 */
+	0, /* 18 */
+	VK_PAUSE | KBDEXT, /* 19, NSFB_KEY_PAUSE */
+	0, /* 20 */
+	0, /* 21 */
+	0, /* 22 */
+	0, /* 23 */
+	0, /* 24 */
+	0, /* 25 */
+	0, /* 26 */
+	VK_ESCAPE, /* 27, NSFB_KEY_ESCAPE */
+	0, /* 28 */
+	0, /* 29 */
+	0, /* 30 */
+	0, /* 31 */
+	VK_SPACE, /* 32, NSFB_KEY_SPACE */
+	0, /* 33, NSFB_KEY_EXCLAIM */
+	0, /* 34, NSFB_KEY_QUOTEDBL */
+	0, /* 35, NSFB_KEY_HASH */
+	0, /* 36, NSFB_KEY_DOLLAR */
+	0, /* 37 */
+	0, /* 38, NSFB_KEY_AMPERSAND */
+	0, /* 39, NSFB_KEY_QUOTE */
+	0, /* 40, NSFB_KEY_LEFTPAREN */
+	0, /* 41, NSFB_KEY_RIGHTPAREN */
+	0, /* 42, NSFB_KEY_ASTERISK */
+	VK_OEM_PLUS, /* 43, NSFB_KEY_PLUS */
+	VK_OEM_COMMA, /* 44, NSFB_KEY_COMMA */
+	VK_OEM_MINUS, /* 45, NSFB_KEY_MINUS */
+	VK_OEM_PERIOD, /* 46, NSFB_KEY_PERIOD */
+	VK_OEM_2, /* 47, NSFB_KEY_SLASH */
+	VK_KEY_0, /* 48, NSFB_KEY_0 */
+	VK_KEY_1, /* 49, NSFB_KEY_1 */
+	VK_KEY_2, /* 50, NSFB_KEY_2 */
+	VK_KEY_3, /* 51, NSFB_KEY_3 */
+	VK_KEY_4, /* 52, NSFB_KEY_4 */
+	VK_KEY_5, /* 53, NSFB_KEY_5 */
+	VK_KEY_6, /* 54, NSFB_KEY_6 */
+	VK_KEY_7, /* 55, NSFB_KEY_7 */
+	VK_KEY_8, /* 56, NSFB_KEY_8 */
+	VK_KEY_9, /* 57, NSFB_KEY_9 */
+	VK_OEM_1, /* 58, NSFB_KEY_COLON */
+	0, /* 59, NSFB_KEY_SEMICOLON */
+	0, /* 60, NSFB_KEY_LESS */
+	0, /* 61, NSFB_KEY_EQUALS */
+	0, /* 62, NSFB_KEY_GREATER */
+	0, /* 63, NSFB_KEY_QUESTION */
+	0, /* 64, NSFB_KEY_AT */
+	0, /* 65 */
+	0, /* 66 */
+	0, /* 67 */
+	0, /* 68 */
+	0, /* 69 */
+	0, /* 70 */
+	0, /* 71 */
+	0, /* 72 */
+	0, /* 73 */
+	0, /* 74 */
+	0, /* 75 */
+	0, /* 76 */
+	0, /* 77 */
+	0, /* 78 */
+	0, /* 79 */
+	0, /* 80 */
+	0, /* 81 */
+	0, /* 82 */
+	0, /* 83 */
+	0, /* 84 */
+	0, /* 85 */
+	0, /* 86 */
+	0, /* 87 */
+	0, /* 88 */
+	0, /* 89 */
+	0, /* 90 */
+	0, /* 91, NSFB_KEY_LEFTBRACKET */
+	VK_OEM_5, /* 92, NSFB_KEY_BACKSLASH */
+	0, /* 93, NSFB_KEY_RIGHTBRACKET */
+	0, /* 94, NSFB_KEY_CARET */
+	0, /* 95, NSFB_KEY_UNDERSCORE */
+	0, /* 96, NSFB_KEY_BACKQUOTE */
+	VK_KEY_A, /* 97, NSFB_KEY_a */
+	VK_KEY_B, /* 98, NSFB_KEY_b */
+	VK_KEY_C, /* 99, NSFB_KEY_c */
+	VK_KEY_D, /* 100, NSFB_KEY_d */
+	VK_KEY_E, /* 101, NSFB_KEY_e */
+	VK_KEY_F, /* 102, NSFB_KEY_f */
+	VK_KEY_G, /* 103, NSFB_KEY_g */
+	VK_KEY_H, /* 104, NSFB_KEY_h */
+	VK_KEY_I, /* 105, NSFB_KEY_i */
+	VK_KEY_J, /* 106, NSFB_KEY_j */
+	VK_KEY_K, /* 107, NSFB_KEY_k */
+	VK_KEY_L, /* 108, NSFB_KEY_l */
+	VK_KEY_M, /* 109, NSFB_KEY_m */
+	VK_KEY_N, /* 110, NSFB_KEY_n */
+	VK_KEY_O, /* 111, NSFB_KEY_o */
+	VK_KEY_P, /* 112, NSFB_KEY_p */
+	VK_KEY_Q, /* 113, NSFB_KEY_q */
+	VK_KEY_R, /* 114, NSFB_KEY_r */
+	VK_KEY_S, /* 115, NSFB_KEY_s */
+	VK_KEY_T, /* 116, NSFB_KEY_t */
+	VK_KEY_U, /* 117, NSFB_KEY_u */
+	VK_KEY_V, /* 118, NSFB_KEY_v */
+	VK_KEY_W, /* 119, NSFB_KEY_w */
+	VK_KEY_X, /* 120, NSFB_KEY_x */
+	VK_KEY_Y, /* 121, NSFB_KEY_y */
+	VK_KEY_Z, /* 122, NSFB_KEY_z */
+	0, /* 123 */
+	0, /* 124 */
+	0, /* 125 */
+	0, /* 126 */
+	VK_DELETE | KBDEXT, /* 127, NSFB_KEY_DELETE */
+};
+
+static enum nsfb_key_code_e freerds_get_keycode_from_vkcode(DWORD vkcode)
+{
+	int index;
+	DWORD keycode = NSFB_KEY_UNKNOWN;
+
+	for (index = 0; index < 128; index++)
+	{
+		if (vkcode == KEYCODE_TO_VKCODE_NSFB[index])
+		{
+			keycode = index;
+			break;
+		}
+	}
+
+	if (keycode != NSFB_KEY_UNKNOWN)
+		return (enum nsfb_key_code_e) keycode;
+
+	switch (vkcode)
+	{
+		case VK_UP:
+			keycode = NSFB_KEY_UP;
+			break;
+
+		case VK_DOWN:
+			keycode = NSFB_KEY_DOWN;
+			break;
+
+		case VK_RIGHT:
+			keycode = NSFB_KEY_RIGHT;
+			break;
+
+		case VK_LEFT:
+			keycode = NSFB_KEY_LEFT;
+			break;
+
+		case VK_INSERT:
+			keycode = NSFB_KEY_INSERT;
+			break;
+
+		case VK_HOME:
+			keycode = NSFB_KEY_HOME;
+			break;
+
+		case VK_PRIOR:
+			keycode = NSFB_KEY_PAGEUP;
+			break;
+
+		case VK_NEXT:
+			keycode = NSFB_KEY_PAGEDOWN;
+			break;
+	}
+
+	if (keycode != NSFB_KEY_UNKNOWN)
+		return (enum nsfb_key_code_e) keycode;
+
+	switch (vkcode)
+	{
+		case VK_NUMPAD0:
+			keycode = NSFB_KEY_KP0;
+			break;
+
+		case VK_NUMPAD1:
+			keycode = NSFB_KEY_KP1;
+			break;
+
+		case VK_NUMPAD2:
+			keycode = NSFB_KEY_KP2;
+			break;
+
+		case VK_NUMPAD3:
+			keycode = NSFB_KEY_KP3;
+			break;
+
+		case VK_NUMPAD4:
+			keycode = NSFB_KEY_KP4;
+			break;
+
+		case VK_NUMPAD5:
+			keycode = NSFB_KEY_KP5;
+			break;
+
+		case VK_NUMPAD6:
+			keycode = NSFB_KEY_KP6;
+			break;
+
+		case VK_NUMPAD7:
+			keycode = NSFB_KEY_KP7;
+			break;
+
+		case VK_NUMPAD8:
+			keycode = NSFB_KEY_KP8;
+			break;
+
+		case VK_NUMPAD9:
+			keycode = NSFB_KEY_KP9;
+			break;
+
+		case VK_DECIMAL:
+			keycode = NSFB_KEY_KP_PERIOD;
+			break;
+
+		case VK_DIVIDE | KBDEXT:
+			keycode = NSFB_KEY_KP_DIVIDE;
+			break;
+
+		case VK_MULTIPLY:
+			keycode = NSFB_KEY_KP_MULTIPLY;
+			break;
+
+		case VK_SUBTRACT:
+			keycode = NSFB_KEY_KP_MINUS;
+			break;
+
+		case VK_ADD:
+			keycode = NSFB_KEY_KP_PLUS;
+			break;
+
+		case VK_RETURN | KBDEXT:
+			keycode = NSFB_KEY_KP_ENTER;
+			break;
+
+		case VK_SEPARATOR:
+			keycode = NSFB_KEY_KP_EQUALS;
+			break;
+	}
+
+	if (keycode != NSFB_KEY_UNKNOWN)
+		return (enum nsfb_key_code_e) keycode;
+
+	switch (vkcode)
+	{
+		case VK_F1:
+			keycode = NSFB_KEY_F1;
+			break;
+
+		case VK_F2:
+			keycode = NSFB_KEY_F2;
+			break;
+
+		case VK_F3:
+			keycode = NSFB_KEY_F3;
+			break;
+
+		case VK_F4:
+			keycode = NSFB_KEY_F4;
+			break;
+
+		case VK_F5:
+			keycode = NSFB_KEY_F5;
+			break;
+
+		case VK_F6:
+			keycode = NSFB_KEY_F6;
+			break;
+
+		case VK_F7:
+			keycode = NSFB_KEY_F7;
+			break;
+
+		case VK_F8:
+			keycode = NSFB_KEY_F8;
+			break;
+
+		case VK_F9:
+			keycode = NSFB_KEY_F9;
+			break;
+
+		case VK_F10:
+			keycode = NSFB_KEY_F10;
+			break;
+
+		case VK_F11:
+			keycode = NSFB_KEY_F11;
+			break;
+
+		case VK_F12:
+			keycode = NSFB_KEY_F12;
+			break;
+
+		case VK_F13:
+			keycode = NSFB_KEY_F13;
+			break;
+
+		case VK_F14:
+			keycode = NSFB_KEY_F14;
+			break;
+
+		case VK_F15:
+			keycode = NSFB_KEY_F15;
+			break;
+	}
+
+	if (keycode != NSFB_KEY_UNKNOWN)
+		return (enum nsfb_key_code_e) keycode;
+
+	switch (vkcode)
+	{
+		case VK_NUMLOCK:
+			keycode = NSFB_KEY_NUMLOCK;
+			break;
+
+		case VK_CAPITAL:
+			keycode = NSFB_KEY_CAPSLOCK;
+			break;
+
+		case VK_SCROLL:
+			keycode = NSFB_KEY_SCROLLOCK;
+			break;
+
+		case VK_RSHIFT:
+			keycode = NSFB_KEY_RSHIFT;
+			break;
+
+		case VK_LSHIFT:
+			keycode = NSFB_KEY_LSHIFT;
+			break;
+
+		case VK_RCONTROL:
+			keycode = NSFB_KEY_RCTRL;
+			break;
+
+		case VK_LCONTROL:
+			keycode = NSFB_KEY_LCTRL;
+			break;
+
+		case VK_RMENU | KBDEXT:
+			keycode = NSFB_KEY_RALT;
+			break;
+
+		case VK_LMENU:
+			keycode = NSFB_KEY_LALT;
+			break;
+	}
+
+	if (keycode != NSFB_KEY_UNKNOWN)
+		return (enum nsfb_key_code_e) keycode;
+
+	switch (vkcode)
+	{
+		case VK_HELP:
+			keycode = NSFB_KEY_HELP;
+			break;
+
+		case VK_SNAPSHOT:
+			keycode = NSFB_KEY_PRINT;
+			break;
+
+		case VK_LWIN:
+			keycode = NSFB_KEY_MENU;
+			break;
+
+		case VK_POWER:
+			keycode = NSFB_KEY_POWER;
+			break;
+	}
+
+	return (enum nsfb_key_code_e) keycode;
+}
+
+static int freerds_check_shared_framebuffer()
 {
 	if (!connected)
 		return 0;
@@ -79,7 +474,30 @@ static int freerds_client_synchronize_keyboard_event(rdsModuleConnector* connect
 
 static int freerds_client_scancode_keyboard_event(rdsModuleConnector* connector, DWORD flags, DWORD code, DWORD keyboardType)
 {
+	DWORD vkcode;
+	nsfb_event_t* event;
+	enum nsfb_key_code_e keycode;
+
 	fprintf(stderr, "%s\n", __FUNCTION__);
+
+	if (!connected)
+		return 0;
+
+	vkcode = GetVirtualKeyCodeFromVirtualScanCode(code, keyboardType);
+	keycode = freerds_get_keycode_from_vkcode(vkcode);
+
+	event = (nsfb_event_t*) malloc(sizeof(nsfb_event_t));
+	ZeroMemory(event, sizeof(nsfb_event_t));
+
+	if (flags & KBD_FLAGS_DOWN)
+		event->type = NSFB_EVENT_KEY_DOWN;
+	else
+		event->type = NSFB_EVENT_KEY_UP;
+
+	event->value.keycode = keycode;
+
+	Queue_Enqueue(InputQueue, (void*) event);
+
 	return 0;
 }
 
@@ -97,7 +515,87 @@ static int freerds_client_unicode_keyboard_event(rdsModuleConnector* connector, 
 
 static int freerds_client_mouse_event(rdsModuleConnector* connector, DWORD flags, DWORD x, DWORD y)
 {
+	nsfb_event_t* event;
+
 	fprintf(stderr, "%s\n", __FUNCTION__);
+
+	if (!connected)
+		return 0;
+
+	if (flags & PTR_FLAGS_MOVE)
+	{
+		event = (nsfb_event_t*) malloc(sizeof(nsfb_event_t));
+		ZeroMemory(event, sizeof(nsfb_event_t));
+
+		event->type = NSFB_EVENT_MOVE_ABSOLUTE;
+
+		event->value.vector.x = x;
+		event->value.vector.y = y;
+		event->value.vector.z = 0;
+
+		Queue_Enqueue(InputQueue, (void*) event);
+	}
+
+	if (flags & PTR_FLAGS_WHEEL)
+	{
+		if (flags & PTR_FLAGS_WHEEL_NEGATIVE)
+		{
+
+		}
+		else
+		{
+
+		}
+	}
+	else if (flags & PTR_FLAGS_BUTTON1)
+	{
+		/* Left Mouse Button */
+
+		event = (nsfb_event_t*) malloc(sizeof(nsfb_event_t));
+		ZeroMemory(event, sizeof(nsfb_event_t));
+
+		event->value.keycode = NSFB_KEY_MOUSE_1;
+
+		if (flags & PTR_FLAGS_DOWN)
+			event->type = NSFB_EVENT_KEY_DOWN;
+		else
+			event->type = NSFB_EVENT_KEY_UP;
+
+		Queue_Enqueue(InputQueue, (void*) event);
+	}
+	else if (flags & PTR_FLAGS_BUTTON2)
+	{
+		/* Right Mouse Button */
+
+		event = (nsfb_event_t*) malloc(sizeof(nsfb_event_t));
+		ZeroMemory(event, sizeof(nsfb_event_t));
+
+		event->value.keycode = NSFB_KEY_MOUSE_3;
+
+		if (flags & PTR_FLAGS_DOWN)
+			event->type = NSFB_EVENT_KEY_DOWN;
+		else
+			event->type = NSFB_EVENT_KEY_UP;
+
+		Queue_Enqueue(InputQueue, (void*) event);
+	}
+	else if (flags & PTR_FLAGS_BUTTON3)
+	{
+		/* Middle Mouse Button */
+
+		event = (nsfb_event_t*) malloc(sizeof(nsfb_event_t));
+		ZeroMemory(event, sizeof(nsfb_event_t));
+
+		event->value.keycode = NSFB_KEY_MOUSE_2;
+
+		if (flags & PTR_FLAGS_DOWN)
+			event->type = NSFB_EVENT_KEY_DOWN;
+		else
+			event->type = NSFB_EVENT_KEY_UP;
+
+		Queue_Enqueue(InputQueue, (void*) event);
+	}
+
 	return 0;
 }
 
@@ -139,6 +637,11 @@ static int freerds_initialise(nsfb_t* nsfb)
 	{
 		fprintf(stderr, "libnsfb_freerds_initialise: unexpected nsfb->ptr: %p\n", nsfb->ptr);
 		return -1;
+	}
+
+	if (!InputQueue)
+	{
+		InputQueue = Queue_New(TRUE, 0, 0);
 	}
 
 	framebuffer.fbWidth = nsfb->width;
@@ -196,7 +699,16 @@ static int freerds_finalise(nsfb_t* nsfb)
 
 static bool freerds_input(nsfb_t* nsfb, nsfb_event_t* event, int timeout)
 {
-	//fprintf(stderr, "libnsfb_freerds_input\n");
+	nsfb_event_t* input;
+
+	input = (nsfb_event_t*) Queue_Dequeue(InputQueue);
+
+	if (input)
+	{
+		CopyMemory(event, input, sizeof(nsfb_event_t));
+		free(input);
+		return true;
+	}
 
 	return false;
 }
@@ -288,7 +800,7 @@ static int freerds_set_geometry(nsfb_t* nsfb, int width, int height, enum nsfb_f
 	int startsize; 
 	int endsize;
 
-	fprintf(stderr, "libnsfb_freerds_geometry\n");
+	fprintf(stderr, "libnsfb_freerds_set_geometry\n");
 
 	startsize = (nsfb->width * nsfb->height * nsfb->bpp) / 8;
 
@@ -306,7 +818,9 @@ static int freerds_set_geometry(nsfb_t* nsfb, int width, int height, enum nsfb_f
 	endsize = (nsfb->width * nsfb->height * nsfb->bpp) / 8;
 
 	if ((nsfb->ptr) && (startsize != endsize))
-		nsfb->ptr = realloc(nsfb->ptr, endsize);
+	{
+
+	}
 
 	nsfb->linelen = (nsfb->width * nsfb->bpp) / 8;
 
